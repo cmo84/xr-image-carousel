@@ -6,6 +6,32 @@ This project is a fully immersive, 3D image gallery viewer designed for WebXR-co
 
 The application is built with a modular architecture and comes with a suite of utility scripts for easy content management and local deployment on Windows.
 
+## Features
+
+### Modular Architecture
+The application logic is broken down into distinct JavaScript modules, each handling a specific responsibility (e.g., player controls, art management, UI). This makes the code easier to maintain and understand.
+
+### Dual VR and AR Modes
+* **VR Mode:** Provides a fully immersive, opaque environment for viewing galleries. Launched via `run_vr_windows.bat`.
+* **AR Mode:** Allows viewing the gallery as an overlay in your real-world environment. It requires a secure (HTTPS) connection, which is handled automatically by `run_ar_windows.bat`.
+
+**Note:** AR Mode only works directly from the native browser in the VR device.  There is no API available for AR when using Steam Link or the Oculus/Meta Desktop connections, but VR mode **is** available when using these PC Link options.
+
+### Dynamic Gallery System
+Galleries are not hardcoded. The application loads content based on a `galleries.json` file, which can be populated by scanning the `/images` directory for valid gallery folders (those containing a `manifest.json`).
+
+### Content Management Scripts
+A suite of Windows batch scripts automates common content management tasks:
+* `unzip_and_manifest.bat`: Extracts images from `.zip` archives and automatically creates the necessary `manifest.json` file for each gallery.
+* `update_galleries.bat`: Scans for all valid galleries and updates the main `galleries.json` file that the application uses to list them.
+* `manifest.bat`: A utility script that can be placed inside a single, unzipped folder of images to generate a manifest just for that folder.
+
+### In-VR User Experience
+* **3D Menu:** A fully interactive menu system works in VR, allowing users to select galleries using their controller's laser pointer.
+* **Controller Guide:** An attachable help panel that displays the controller layout and button actions.
+* **Debugging Console:** An in-VR console can be toggled to show log messages and errors, aiding development and troubleshooting without needing to remove the headset.
+
+
 ## **Tech Stack**
 
 * **3D Engine:** [Three.js](https://threejs.org/)  
@@ -78,3 +104,34 @@ To run the gallery in AR mode, double-click run\_ar\_windows.bat.
 3. It then starts the web server using this certificate, serving the site over HTTPS.
 
 When you first navigate to the https://localhost:8000 URL provided by the script, your browser will show a security warning. This is expected because the certificate is self-signed. You must click "Advanced" and then "Proceed to localhost" to view the application.
+
+## Default Controls
+
+The application can be navigated using a standard keyboard on a desktop or with standard WebXR controllers in VR/AR.
+
+### Keyboard Controls
+
+| Key | Action |
+| :-- | :--- |
+| **W / S** | Move Forward / Backward |
+| **A / D** | Turn Left / Right |
+| **Q / E** | Strafe Left / Right |
+| **R / F** | Move Up / Down |
+| **.** (period) | Next Image |
+| **,** (comma) | Previous Image |
+| **M** | Open / Close Gallery Menu |
+| **I** | Toggle Diagnostic Info |
+
+### Meta Quest Controller Controls
+
+| Controller | Button | Action |
+| :--- | :--- | :--- |
+| **Left** | Thumbstick | Move / Turn / Scroll Menu |
+|  | Thumbstick Click | Open / Close Gallery Menu |
+|  | Trigger | Select Menu Item / Toggle Info |
+|  | Grip | Clutch Move (Grab and pull the world) |
+|  | X Button | Next Image |
+|  | Y Button | Previous Image |
+| **Right** | A Button | Toggle In-VR Console |
+|  | B Button | Toggle Controller Help Guide |
+|  | Thumbstick | Scroll In-VR Console |
