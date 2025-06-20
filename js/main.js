@@ -12,7 +12,7 @@ import PlayerController from './PlayerController.js';
 import GalleryMenu from './GalleryMenu.js';
 
 // Core Three.js components
-let camera, scene, renderer, clock, textureLoader, controls;
+let camera, scene, renderer, clock, textureLoader;
 
 // Player and XR controller objects
 let player, controller1, controller2, controllerGrip1, controllerGrip2;
@@ -68,9 +68,6 @@ function init() {
     
     // Initialize controller objects
     setupControllers();
-
-    // Standard desktop controls
-    controls = new THREE.OrbitControls(camera, renderer.domElement);
     
     // --- Module Instantiation ---
     // The main script acts as an orchestrator, passing necessary components and callbacks to each module.
@@ -80,7 +77,7 @@ function init() {
         artManager.resetGallery();
         resetPlayerState();
     });
-    playerController = new PlayerController(player, camera, controls, controller1, controller2, {
+    playerController = new PlayerController(player, camera, controller1, controller2, {
         onMenuToggle: () => galleryMenu.toggleMenu(),
         onNextImage: () => artManager.selectNextImage(),
         onPrevImage: () => artManager.selectPreviousImage(),
@@ -102,6 +99,25 @@ function init() {
     window.addEventListener('resize', onWindowResize);
     window.addEventListener('keydown', (e) => playerController.handleKeyDown(e));
     window.addEventListener('keyup', (e) => playerController.handleKeyUp(e));
+    
+    // --- Click-and-drag mouse-look listeners ---
+    renderer.domElement.addEventListener('mousedown', (event) => {
+        if (!renderer.xr.isPresenting) {
+            playerController.startMouseLook();
+            window.addEventListener('mousemove', onDragMouseMove);
+            window.addEventListener('mouseup', onDragMouseUp);
+        }
+    });
+
+    function onDragMouseMove(event) {
+        playerController.handleMouseMove(event);
+    }
+
+    function onDragMouseUp(event) {
+        playerController.endMouseLook();
+        window.removeEventListener('mousemove', onDragMouseMove);
+        window.removeEventListener('mouseup', onDragMouseUp);
+    }
     
     // Initial setup of the experience
     resetExperience();
@@ -144,13 +160,7 @@ function onSessionEnd() {
     currentSession = null;
     scene.background = new THREE.Color(0x101010);
     
-    // Re-enable orbit controls and reset camera for desktop
-    controls.enabled = true; 
-    camera.position.set(0, PLAYER_HEIGHT, 3);
-    player.position.set(0, 0, 0); 
-    controls.target.set(0, PLAYER_HEIGHT, 0);
-    controls.update();
-
+    resetPlayerState(); // Reset player and camera state for desktop
     galleryMenu.hideMenu();
 }
 
@@ -183,22 +193,21 @@ function resetExperience() {
  */
 function resetPlayerState() {
     const galleryRadius = artManager.getGalleryRadius();
-    player.position.set(0, 0.8, 0); // Set player height directly
     player.rotation.set(0, Math.PI, 0);
-    player.position.z = galleryRadius - 2; // Start closer to the first painting
+    camera.position.set(0, 0, 0);
+    camera.rotation.set(0, 0, 0);
 
+    let startY;
     if (renderer.xr.isPresenting) {
-        // In XR, camera is at the player's origin
-        controls.enabled = false;
-        camera.position.set(0, 0, 0);
-        camera.rotation.set(0, 0, 0);
+        // For VR, player origin is at the floor. The XR session handles camera height.
+        startY = 0;
     } else {
-        // In desktop mode, position camera behind the player origin
-        scene.background = new THREE.Color(0x101010);
-        camera.position.set(0, 1.2, 3); // Lower desktop camera
-        controls.target.set(player.position.x, PLAYER_HEIGHT + 0.3, player.position.z);
-        controls.update();
+        // For desktop, player origin is at the tuned head height.
+        startY = PLAYER_HEIGHT + 0.3;
     }
+
+    // Set all position components at once to avoid overwriting them.
+    player.position.set(0, startY, galleryRadius - 2);
 }
 
 /**
