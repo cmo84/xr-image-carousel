@@ -11,12 +11,14 @@ export default class ArtManager {
     /**
      * @param {THREE.Scene} scene - The main Three.js scene object.
      * @param {THREE.PerspectiveCamera} camera - The main camera.
+     * @param {THREE.WebGLRenderer} renderer - The main Three.js renderer.
      * @param {THREE.TextureLoader} textureLoader - The loader for image textures.
      * @param {number} playerHeight - The height of the player, used for vertical positioning of art.
      */
-    constructor(scene, camera, textureLoader, playerHeight) {
+    constructor(scene, camera, renderer, textureLoader, playerHeight) {
         this.scene = scene;
         this.camera = camera;
+        this.renderer = renderer;
         this.textureLoader = textureLoader;
         this.PLAYER_HEIGHT = playerHeight;
 
@@ -111,6 +113,7 @@ export default class ArtManager {
         // Re-initialize containers
         this.diagnosticLabels = [];
         this.artGroup = new THREE.Group();
+        this.artGroup.name = "ArtGroup"; // Assign the name the menu system looks for.
         this.scene.add(this.artGroup);
 
         // Re-create the paintings based on the current URL
@@ -233,15 +236,13 @@ export default class ArtManager {
      * Displays a welcome message with control instructions.
      */
     displayWelcomeMessage() {
-        if (this.camera.getObjectByName("welcomeMessage")) return;
-
         const messageGroup = new THREE.Group();
         messageGroup.name = "welcomeMessage";
 
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
         // Check if currently in a VR session to adjust the message content
-        const isVR = this.camera.parent && this.camera.parent.parent && this.camera.parent.parent.xr && this.camera.parent.parent.xr.isPresenting;
+        const isVR = this.renderer.xr.isPresenting;
 
         canvas.width = isVR ? 1200 : 1024;
         canvas.height = isVR ? 800 : 600;
@@ -330,33 +331,94 @@ export default class ArtManager {
      */
     createDiagnosticLabel(parent, filename, folderName, image, paintingWidth, paintingHeight) {
         const labelGroup = new THREE.Group();
-        const text = `${folderName}/${filename} - ${image.naturalWidth}x${image.naturalHeight}`;
+        const fullText = `${folderName}/${filename} - ${image.naturalWidth}x${image.naturalHeight}`;
+        
+        const fontSize = 40;
+        const lineHeight = 50;
+        const padding = 20;
+        const maxWidth = 1800; // Max width before wrapping
 
-        // Use a 2D canvas to generate the text texture
         const textCanvas = document.createElement('canvas');
         const context = textCanvas.getContext('2d');
-        context.font = '80px sans-serif';
-        const textWidth = context.measureText(text).width;
+        context.font = `${fontSize}px sans-serif`;
+
+        // --- Hierarchical Text Wrapping Logic ---
+        function wrapText(text, ctx, maxWidth) {
+            const lines = [];
+            let remainingText = text;
+
+            while (remainingText.length > 0) {
+                let endIndex = remainingText.length;
+                while (ctx.measureText(remainingText.substring(0, endIndex)).width > maxWidth && endIndex > 0) {
+                    endIndex--;
+                }
+
+                if (endIndex === 0) endIndex = 1; // Failsafe for single chars that are too wide
+
+                let breakPoint = endIndex;
+                const potentialLine = remainingText.substring(0, endIndex);
+                
+                // If the entire remaining text fits, we are done with this segment
+                if (endIndex === remainingText.length) {
+                    lines.push(remainingText);
+                    break;
+                }
+
+                const lastSlash = potentialLine.lastIndexOf('/');
+                const lastUnderscore = potentialLine.lastIndexOf('_');
+                const lastSpace = potentialLine.lastIndexOf(' ');
+
+                // Find the best break point with slash > underscore > space hierarchy
+                let bestBreak = -1;
+                if (lastSlash > 0) bestBreak = lastSlash + 1;
+                else if (lastUnderscore > 0) bestBreak = lastUnderscore + 1;
+                else if (lastSpace > 0) bestBreak = lastSpace + 1;
+
+                if (bestBreak > 0) {
+                    breakPoint = bestBreak;
+                }
+                
+                lines.push(remainingText.substring(0, breakPoint).trim());
+                remainingText = remainingText.substring(breakPoint).trim();
+            }
+            return lines;
+        }
+
+        const lines = wrapText(fullText, context, maxWidth);
+        // --- End Text Wrapping ---
+
+        let actualTextWidth = 0;
+        lines.forEach(line => {
+            actualTextWidth = Math.max(actualTextWidth, context.measureText(line).width);
+        });
+
+        const canvasWidth = actualTextWidth;
+        const canvasHeight = lines.length * lineHeight;
+
+        textCanvas.width = canvasWidth + padding * 2;
+        textCanvas.height = canvasHeight + padding * 2;
         
-        textCanvas.width = textWidth;
-        textCanvas.height = 100; 
-        context.font = '80px sans-serif';
+        // Redraw with final dimensions
+        context.font = `${fontSize}px sans-serif`;
         context.fillStyle = 'white';
         context.textAlign = 'center';
-        context.textBaseline = 'middle';
-        context.fillText(text, textWidth / 2, 50);
+        context.textBaseline = 'top';
+
+        for(let i = 0; i < lines.length; i++) {
+            context.fillText(lines[i], textCanvas.width / 2, padding + (i * lineHeight));
+        }
 
         const texture = new THREE.CanvasTexture(textCanvas);
         const textMaterial = new THREE.MeshBasicMaterial({ map: texture, transparent: true });
-        const textPlaneWidth = textWidth * 0.001; 
-        const textPlaneHeight = 100 * 0.001;
+        
+        const scaleFactor = 0.001;
+        const textPlaneWidth = textCanvas.width * scaleFactor;
+        const textPlaneHeight = textCanvas.height * scaleFactor;
         const textMesh = new THREE.Mesh(new THREE.PlaneGeometry(textPlaneWidth, textPlaneHeight), textMaterial);
 
-        // Create a background panel for the text for better readability
-        const panelWidth = textPlaneWidth + 0.1;
-        const panelHeight = textPlaneHeight + 0.05;
+        // Create a background panel that matches the new dynamic size
         const panel = new THREE.Mesh(
-            new THREE.PlaneGeometry(panelWidth, panelHeight),
+            new THREE.PlaneGeometry(textPlaneWidth, textPlaneHeight),
             new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.6 })
         );
 
@@ -364,9 +426,9 @@ export default class ArtManager {
         labelGroup.add(panel);
         labelGroup.add(textMesh);
         
-        // Store target Y positions for animation
+        // Adjust Y positions based on the new dynamic height
         labelGroup.userData.hiddenY = paintingHeight / 2;
-        labelGroup.userData.visibleY = (paintingHeight / 2) + 0.15; 
+        labelGroup.userData.visibleY = (paintingHeight / 2) + (textPlaneHeight / 2) + 0.05; 
         labelGroup.position.y = labelGroup.userData.hiddenY;
         
         labelGroup.visible = false; // Start invisible

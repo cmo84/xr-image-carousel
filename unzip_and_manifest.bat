@@ -4,7 +4,7 @@ setlocal enabledelayedexpansion
 :: ============================================================================
 :: Unzips all archives in the 'images' subfolder and generates manifests.
 :: Place this script in the directory ONE LEVEL ABOVE your 'images' folder.
-:: v2.1 - Modified to operate on a subfolder.
+:: v2.2 - Corrected JSON string building to remove extra escapes.
 :: ============================================================================
 
 :: Set the base directory to the script's location
@@ -26,10 +26,8 @@ if not exist "%images_dir%" (
 
 :: Loop through all .zip files in the 'images' directory
 for %%F in ("%images_dir%*.zip") do (
-    :: --- FIX: Correctly reference the loop variable with %%~fF ---
     set "zip_file=%%~fF"
     set "dir_name=%%~nF"
-    :: --- MODIFIED: Extraction path is now inside the 'images' directory ---
     set "extract_path=%images_dir%!dir_name!"
 
     echo [INFO] Found archive: !zip_file!
@@ -58,13 +56,17 @@ for %%F in ("%images_dir%*.zip") do (
             for /F "delims=" %%f in ('dir /b /a-d /o:n "!extract_path!\*.jpg" "!extract_path!\*.jpeg" "!extract_path!\*.png" "!extract_path!\*.gif" "!extract_path!\*.webp" 2^>nul') do (
                 set "current_filename=%%~nxf"
                 echo      Found: !current_filename!
-                :: --- FIX: Add quotes around the filename for valid JSON ---
-                set "json_list=!json_list!"\"!current_filename!\"","
+                
+                :: Correctly build the JSON list without escape characters
+                if not defined json_list (
+                    set "json_list="!current_filename!""
+                ) else (
+                    set "json_list=!json_list!,"!current_filename!""
+                )
             )
             
             :: Write the manifest file
             if defined json_list (
-                set "json_list=!json_list:~0,-1!"
                 (echo {"images":[!json_list!]}) > "!extract_path!\manifest.json"
                 echo   [MANIFEST] Created 'manifest.json' in !dir_name!
             ) else (

@@ -119,14 +119,14 @@ export default class PlayerController {
             });
             
             if (leftSource && leftSource.gamepad) {
-                this.handleLeftController(delta, leftSource.gamepad, forwardDirection, moveVector, rotationAmount, isMenuVisible, isConsoleVisible);
+                rotationAmount = this.handleLeftController(delta, leftSource.gamepad, forwardDirection, moveVector, rotationAmount, isMenuVisible, isConsoleVisible);
             }
             
             if (rightSource && rightSource.gamepad) {
                 this.handleRightController(delta, rightSource.gamepad, isConsoleVisible);
             }
         } else { // Desktop controls
-            this.handleDesktopControls(delta, forwardDirection, rightDirection, moveVector, rotationAmount, isMenuVisible);
+            rotationAmount = this.handleDesktopControls(delta, forwardDirection, rightDirection, moveVector, rotationAmount, isMenuVisible);
         }
 
         // Apply movement and rotation to the player group
@@ -156,6 +156,7 @@ export default class PlayerController {
      * @param {number} rotationAmount - The amount to apply rotation by.
      * @param {boolean} isMenuVisible - Whether the menu is currently visible.
      * @param {boolean} isConsoleVisible - Whether the console is currently visible.
+     * @returns {number} The calculated rotation amount.
      */
     handleLeftController(delta, gamepad, forwardDirection, moveVector, rotationAmount, isMenuVisible, isConsoleVisible) {
         const axes = gamepad.axes;
@@ -239,6 +240,8 @@ export default class PlayerController {
         } else if (!nextButton) {
             this.commaKeyPressed = false;
         }
+
+        return rotationAmount;
     }
 
     /**
@@ -284,6 +287,7 @@ export default class PlayerController {
      * @param {THREE.Vector3} moveVector - The vector to apply movement to.
      * @param {number} rotationAmount - The amount to apply rotation by.
      * @param {boolean} isMenuVisible - Whether the menu is currently visible.
+     * @returns {number} The calculated rotation amount.
      */
     handleDesktopControls(delta, forwardDirection, rightDirection, moveVector, rotationAmount, isMenuVisible) {
         const anyMovementKey = this.keys.w || this.keys.s || this.keys.a || this.keys.d || this.keys.q || this.keys.e || this.keys.r || this.keys.f;
@@ -308,5 +312,7 @@ export default class PlayerController {
         else if (!this.keys.m) { this.mKeyPressed = false; }
         if (this.keys.i && !this.iKeyPressed) { this.iKeyPressed = true; this.callbacks.onInfoToggle(); } 
         else if (!this.keys.i) { this.iKeyPressed = false; }
+        
+        return rotationAmount;
     }
 }

@@ -3,7 +3,7 @@ setlocal enabledelayedexpansion
 
 :: ============================================================================
 :: Portable Manifest Creation Script for Windows Batch
-:: v2.0 - Corrected JSON formatting bug.
+:: v2.1 - Corrected JSON string building to remove extra escapes.
 :: ============================================================================
 ::
 :: This script scans the folder it is currently in for image files and 
@@ -34,16 +34,16 @@ for /F "delims=" %%f in ('dir /b /a-d /o:n "%target_directory%*.jpg" "%target_di
     if /i not "!current_filename!"=="%~nx0" (
         echo   Found: !current_filename!
     
-        :: --- FIX: Add quotes around the filename for valid JSON ---
-        set "json_list=!json_list!"\"!current_filename!\"","
+        :: Correctly build the JSON list without escape characters
+        if not defined json_list (
+            set "json_list="!current_filename!""
+        ) else (
+            set "json_list=!json_list!,"!current_filename!""
+        )
     )
 )
 
-:: If at least one file was found, remove the trailing comma from the end of the list.
-if defined json_list (
-    set "json_list=!json_list:~0,-1!"
-)
-
+:: If at least one file was found, write the final JSON.
 echo.
 echo Writing manifest to: %output_file%
 

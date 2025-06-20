@@ -4,7 +4,7 @@ setlocal
 :: ============================================================================
 :: Scans for valid galleries and updates the master 'galleries.json' file.
 :: Place this script in the root project folder.
-:: v3.2 - Prints found galleries to the console.
+:: v3.3 - Corrected PowerShell logic to always output a JSON array.
 :: ============================================================================
 
 :: --- Using simple relative paths, as the script is run from the root folder ---
@@ -23,11 +23,11 @@ if not exist "%images_dir%" (
 :: --- Use PowerShell for robust directory scanning and JSON creation ---
 powershell -ExecutionPolicy Bypass -Command ^
     "$imagesPath = '%images_dir%';" ^
-    "$galleries = Get-ChildItem -Path $imagesPath -Directory | ForEach-Object {" ^
+    "$galleries = @(Get-ChildItem -Path $imagesPath -Directory | ForEach-Object {" ^
     "    if (Test-Path -Path (Join-Path -Path $_.FullName -ChildPath 'manifest.json')) {" ^
     "        $_.Name;" ^
     "    }" ^
-    "} | Sort-Object;" ^
+    "}) | Sort-Object;" ^
     "if ($galleries) {" ^
     "    Write-Host '[INFO] Found the following valid galleries:';" ^
     "    $galleries | ForEach-Object { Write-Host ('  - ' + $_) };" ^
