@@ -10,11 +10,13 @@
 export default class GalleryMenu {
     /**
      * @param {THREE.PerspectiveCamera} camera - The main camera, used to attach the VR menu.
+     * @param {THREE.WebGLRenderer} renderer - The main Three.js renderer.
      * @param {THREE.XRTargetRaySpace} controller1 - The controller used for pointing and selecting in VR.
      * @param {function} onGalleryLoadCallback - A callback function to execute when a new gallery is selected.
      */
-    constructor(camera, controller1, onGalleryLoadCallback) {
+    constructor(camera, renderer, controller1, onGalleryLoadCallback) {
         this.camera = camera;
+        this.renderer = renderer;
         this.controller1 = controller1;
         this.onGalleryLoadCallback = onGalleryLoadCallback;
 
@@ -77,11 +79,15 @@ export default class GalleryMenu {
         fetch('galleries.json')
             .then(response => response.json())
             .then(data => {
-                this.galleries = data.galleries;
+                // Ensure that galleries is always an array, even if the JSON provides a single string.
+                this.galleries = Array.isArray(data.galleries) ? data.galleries : [data.galleries];
+
                 // Sort galleries numerically if they have numbers in their names.
-                this.galleries.sort((a, b) => {
-                    return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
-                });
+                if (this.galleries.length > 1) { // Sorting is only necessary for more than one item
+                    this.galleries.sort((a, b) => {
+                        return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+                    });
+                }
                 this.renderMenu();
             })
             .catch(error => console.error('Error loading galleries:', error));
@@ -132,7 +138,7 @@ export default class GalleryMenu {
         if (artGroup) artGroup.visible = false; // Hide art while menu is open
 
         this.menuVisible = true;
-        const isPresenting = this.camera.parent.parent.xr.isPresenting;
+        const isPresenting = this.renderer.xr.isPresenting;
 
         if (isPresenting) {
             this.laserPointer.visible = true;

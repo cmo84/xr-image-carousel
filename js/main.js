@@ -75,8 +75,8 @@ function init() {
     // --- Module Instantiation ---
     // The main script acts as an orchestrator, passing necessary components and callbacks to each module.
     inVRConsole = new InVRConsole(camera);
-    artManager = new ArtManager(scene, camera, textureLoader, PLAYER_HEIGHT);
-    galleryMenu = new GalleryMenu(camera, controller1, () => {
+    artManager = new ArtManager(scene, camera, renderer, textureLoader, PLAYER_HEIGHT);
+    galleryMenu = new GalleryMenu(camera, renderer, controller1, () => {
         artManager.resetGallery();
         resetPlayerState();
     });
