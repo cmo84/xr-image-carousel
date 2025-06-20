@@ -11,15 +11,13 @@ export default class PlayerController {
     /**
      * @param {THREE.Group} player - The Group object representing the player.
      * @param {THREE.PerspectiveCamera} camera - The main camera.
-     * @param {THREE.OrbitControls} controls - The desktop orbit controls.
      * @param {THREE.XRTargetRaySpace} controller1 - The first XR controller.
      * @param {THREE.XRTargetRaySpace} controller2 - The second XR controller.
      * @param {object} callbacks - A map of callback functions to trigger on input events.
      */
-    constructor(player, camera, controls, controller1, controller2, callbacks) {
+    constructor(player, camera, controller1, controller2, callbacks) {
         this.player = player;
         this.camera = camera;
-        this.controls = controls;
         this.controller1 = controller1;
         this.controller2 = controller2;
         this.callbacks = callbacks;
@@ -28,6 +26,10 @@ export default class PlayerController {
         // --- Movement parameters ---
         this.moveSpeed = 3.0;
         this.rotationSpeed = 1.0;
+        this.mouseSensitivity = 0.002;
+
+        // --- Mouse Look State ---
+        this.isDragging = false;
 
         // --- State for keyboard input ---
         this.keys = { w: false, s: false, a: false, d: false, q: false, e: false, r: false, f: false, ',': false, '.': false, m: false, escape: false, i: false };
@@ -91,6 +93,37 @@ export default class PlayerController {
     }
 
     /**
+     * Enables mouse look on mouse down.
+     */
+    startMouseLook() {
+        this.isDragging = true;
+    }
+
+    /**
+     * Disables mouse look on mouse up.
+     */
+    endMouseLook() {
+        this.isDragging = false;
+    }
+
+    /**
+     * Handles mouse movement for FPS-style look controls.
+     * @param {MouseEvent} event - The mouse move event.
+     */
+    handleMouseMove(event) {
+        if (!this.isDragging) return;
+
+        // Yaw (left/right) rotation is applied to the whole player group
+        this.player.rotation.y -= event.movementX * this.mouseSensitivity;
+
+        // Pitch (up/down) rotation is applied to the camera only
+        this.camera.rotation.x -= event.movementY * this.mouseSensitivity;
+
+        // Clamp the camera's vertical rotation to prevent flipping
+        this.camera.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, this.camera.rotation.x));
+    }
+
+    /**
      * Per-frame update logic for the PlayerController.
      * @param {number} delta - The time delta since the last frame.
      * @param {XRSession|null} currentSession - The active WebXR session, if any.
@@ -101,17 +134,7 @@ export default class PlayerController {
         const moveVector = new THREE.Vector3();
         let rotationAmount = 0;
 
-        // Get player's forward direction, ignoring vertical component.
-        const forwardDirection = new THREE.Vector3();
-        this.camera.getWorldDirection(forwardDirection);
-        forwardDirection.y = 0;
-        forwardDirection.normalize();
-
-        const rightDirection = new THREE.Vector3();
-        rightDirection.crossVectors(forwardDirection, this.player.up);
-
         if (currentSession) { 
-            this.controls.enabled = false;
             let leftSource, rightSource;
             currentSession.inputSources.forEach(source => {
                 if (source.handedness === 'left') leftSource = source;
@@ -119,6 +142,10 @@ export default class PlayerController {
             });
             
             if (leftSource && leftSource.gamepad) {
+                const forwardDirection = new THREE.Vector3();
+                this.camera.getWorldDirection(forwardDirection);
+                forwardDirection.y = 0;
+                forwardDirection.normalize();
                 rotationAmount = this.handleLeftController(delta, leftSource.gamepad, forwardDirection, moveVector, rotationAmount, isMenuVisible, isConsoleVisible);
             }
             
@@ -126,19 +153,16 @@ export default class PlayerController {
                 this.handleRightController(delta, rightSource.gamepad, isConsoleVisible);
             }
         } else { // Desktop controls
-            rotationAmount = this.handleDesktopControls(delta, forwardDirection, rightDirection, moveVector, rotationAmount, isMenuVisible);
+            rotationAmount = this.handleDesktopControls(delta, moveVector, rotationAmount);
         }
 
         // Apply movement and rotation to the player group
         if (moveVector.lengthSq() > 0) {
             this.player.position.add(moveVector);
-            if (!currentSession) this.controls.target.add(moveVector); // Move orbit controls target with player
         }
         if (rotationAmount !== 0) {
              this.player.rotation.y += rotationAmount;
         }
-        
-        if (!currentSession) this.controls.update();
 
         // Update visibility of the controller guide
         if (this.controllerGuide) {
@@ -282,27 +306,32 @@ export default class PlayerController {
     /**
      * Handles all desktop keyboard inputs.
      * @param {number} delta - Frame time delta.
-     * @param {THREE.Vector3} forwardDirection - The player's current forward direction.
-     * @param {THREE.Vector3} rightDirection - The player's current right direction.
      * @param {THREE.Vector3} moveVector - The vector to apply movement to.
      * @param {number} rotationAmount - The amount to apply rotation by.
-     * @param {boolean} isMenuVisible - Whether the menu is currently visible.
      * @returns {number} The calculated rotation amount.
      */
-    handleDesktopControls(delta, forwardDirection, rightDirection, moveVector, rotationAmount, isMenuVisible) {
-        const anyMovementKey = this.keys.w || this.keys.s || this.keys.a || this.keys.d || this.keys.q || this.keys.e || this.keys.r || this.keys.f;
-        this.controls.enabled = !anyMovementKey && !isMenuVisible;
+    handleDesktopControls(delta, moveVector, rotationAmount) {
+        // Get camera direction
+        const forwardDirection = new THREE.Vector3();
+        this.camera.getWorldDirection(forwardDirection);
+        forwardDirection.y = 0; // Move parallel to the ground
+        forwardDirection.normalize();
+
+        const rightDirection = new THREE.Vector3();
+        rightDirection.crossVectors(forwardDirection, new THREE.Vector3(0, 1, 0));
         
-        if(anyMovementKey) {
-            if (this.keys.w) moveVector.add(forwardDirection.clone().multiplyScalar(this.moveSpeed * delta));
-            if (this.keys.s) moveVector.add(forwardDirection.clone().multiplyScalar(-this.moveSpeed * delta));
-            if (this.keys.d) rotationAmount -= this.rotationSpeed * delta; 
-            if (this.keys.a) rotationAmount += this.rotationSpeed * delta;
-            if (this.keys.e) moveVector.add(rightDirection.clone().multiplyScalar(this.moveSpeed * delta));
-            if (this.keys.q) moveVector.add(rightDirection.clone().multiplyScalar(-this.moveSpeed * delta));
-            if (this.keys.r) moveVector.y += this.moveSpeed * delta;
-            if (this.keys.f) moveVector.y -= this.moveSpeed * delta;
-        }
+        if (this.keys.w) moveVector.add(forwardDirection.clone().multiplyScalar(this.moveSpeed * delta));
+        if (this.keys.s) moveVector.add(forwardDirection.clone().multiplyScalar(-this.moveSpeed * delta));
+        
+        if (this.keys.q) moveVector.add(rightDirection.clone().multiplyScalar(-this.moveSpeed * delta));
+        if (this.keys.e) moveVector.add(rightDirection.clone().multiplyScalar(this.moveSpeed * delta));
+
+        if (this.keys.a) rotationAmount += this.rotationSpeed * delta; 
+        if (this.keys.d) rotationAmount -= this.rotationSpeed * delta;
+        
+        if (this.keys.r) this.player.position.y += this.moveSpeed * delta;
+        if (this.keys.f) this.player.position.y -= this.moveSpeed * delta;
+
 
         if (this.keys['.'] && !this.periodKeyPressed) { this.periodKeyPressed = true; this.callbacks.onNextImage(); } 
         else if (!this.keys['.']) { this.periodKeyPressed = false; }

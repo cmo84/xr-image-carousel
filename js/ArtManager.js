@@ -333,8 +333,9 @@ export default class ArtManager {
         const labelGroup = new THREE.Group();
         const fullText = `${folderName}/${filename} - ${image.naturalWidth}x${image.naturalHeight}`;
         
-        const fontSize = 40;
-        const lineHeight = 50;
+        const fontSize = 65;
+        const lineHeight = fontSize * 1.2; // A bit more than the font size for padding
+
         const padding = 20;
         const maxWidth = 1800; // Max width before wrapping
 
