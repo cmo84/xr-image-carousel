@@ -2,6 +2,7 @@
  * @file Manages player movement and input controls for both desktop and WebXR.
  * This class translates keyboard presses and controller inputs into player navigation
  * and triggers actions via a callback system.
+ * v2.1 - Restored functionality by simplifying controller logic and fixing handedness detection.
  */
 
 /**
@@ -11,8 +12,8 @@ export default class PlayerController {
     /**
      * @param {THREE.Group} player - The Group object representing the player.
      * @param {THREE.PerspectiveCamera} camera - The main camera.
-     * @param {THREE.XRTargetRaySpace} controller1 - The first XR controller.
-     * @param {THREE.XRTargetRaySpace} controller2 - The second XR controller.
+     * @param {THREE.XRTargetRaySpace} controller1 - The first XR controller from the renderer.
+     * @param {THREE.XRTargetRaySpace} controller2 - The second XR controller from the renderer.
      * @param {object} callbacks - A map of callback functions to trigger on input events.
      */
     constructor(player, camera, controller1, controller2, callbacks) {
@@ -22,6 +23,16 @@ export default class PlayerController {
         this.controller2 = controller2;
         this.callbacks = callbacks;
         this.controllerGuide = null;
+
+        // Defines button names and their corresponding index numbers.
+        // If mappings change, you only need to update the numbers here.
+        this.mapping = {
+            trigger: 0,
+            grip: 1,
+            thumbstickClick: 3,
+            buttonX: 4, // X on Left Controller, A on Right Controller
+            buttonY: 5  // Y on Left Controller, B on Right Controller
+        };
 
         // --- Movement parameters ---
         this.moveSpeed = 3.0;
@@ -52,11 +63,8 @@ export default class PlayerController {
         
         this.controllerInfoVisible = false;
 
-        // --- Controller Event Listeners ---
-        this.controller1.addEventListener('selectstart', () => this.callbacks.onMenuItemSelect());
-        this.controller1.addEventListener('selectend', (event) => {
-            // Future use if needed
-        });
+        // NOTE: Event listeners in the constructor were removed as they were unreliable
+        // with controller handedness swaps. All input is now handled in the update loop.
     }
 
     /**
@@ -113,13 +121,8 @@ export default class PlayerController {
     handleMouseMove(event) {
         if (!this.isDragging) return;
 
-        // Yaw (left/right) rotation is applied to the whole player group
         this.player.rotation.y -= event.movementX * this.mouseSensitivity;
-
-        // Pitch (up/down) rotation is applied to the camera only
         this.camera.rotation.x -= event.movementY * this.mouseSensitivity;
-
-        // Clamp the camera's vertical rotation to prevent flipping
         this.camera.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, this.camera.rotation.x));
     }
 
@@ -135,28 +138,25 @@ export default class PlayerController {
         let rotationAmount = 0;
 
         if (currentSession) { 
-            let leftSource, rightSource;
-            currentSession.inputSources.forEach(source => {
-                if (source.handedness === 'left') leftSource = source;
-                if (source.handedness === 'right') rightSource = source;
-            });
-            
-            if (leftSource && leftSource.gamepad) {
-                const forwardDirection = new THREE.Vector3();
-                this.camera.getWorldDirection(forwardDirection);
-                forwardDirection.y = 0;
-                forwardDirection.normalize();
-                rotationAmount = this.handleLeftController(delta, leftSource.gamepad, forwardDirection, moveVector, rotationAmount, isMenuVisible, isConsoleVisible);
-            }
-            
-            if (rightSource && rightSource.gamepad) {
-                this.handleRightController(delta, rightSource.gamepad, isConsoleVisible);
+            // Simplified loop to process controllers based on their actual, live handedness.
+            // This correctly calls the handler for the appropriate hand every frame.
+            for (const source of currentSession.inputSources) {
+                if (!source.gamepad) continue;
+
+                if (source.handedness === 'left') {
+                    const forwardDirection = new THREE.Vector3();
+                    this.camera.getWorldDirection(forwardDirection);
+                    forwardDirection.y = 0;
+                    forwardDirection.normalize();
+                    rotationAmount = this.handleLeftController(delta, source.gamepad, forwardDirection, moveVector, rotationAmount, isMenuVisible, isConsoleVisible);
+                } else if (source.handedness === 'right') {
+                    this.handleRightController(delta, source.gamepad, isConsoleVisible);
+                }
             }
         } else { // Desktop controls
             rotationAmount = this.handleDesktopControls(delta, moveVector, rotationAmount);
         }
 
-        // Apply movement and rotation to the player group
         if (moveVector.lengthSq() > 0) {
             this.player.position.add(moveVector);
         }
@@ -164,7 +164,6 @@ export default class PlayerController {
              this.player.rotation.y += rotationAmount;
         }
 
-        // Update visibility of the controller guide
         if (this.controllerGuide) {
             if (this.controllerInfoVisible) this.controllerGuide.show();
             else this.controllerGuide.hide();
@@ -189,35 +188,31 @@ export default class PlayerController {
         const joystickTurn = axes[2] || 0;
         const joystickVertical = -axes[3] || 0; 
 
-        const triggerValue = buttons[0] ? buttons[0].pressed : 0;
-        const gripValue = buttons[1] ? buttons[1].pressed : 0;
+        const triggerValue = buttons[this.mapping.trigger]?.pressed || false;
+        const gripValue = buttons[this.mapping.grip]?.pressed || false;
         
-        // Handle "clutch" movement with the grip button
+        const leftHandObject = this.controller1;
+
         const gripEngaged = gripValue;
         if (gripEngaged && !this.isClutching) {
             this.isClutching = true;
             this.clutchStartPlayerPosition.copy(this.player.position);
-            this.controller1.parent.localToWorld(this.clutchStartControllerPosition.setFromMatrixPosition(this.controller1.matrix));
+            leftHandObject.parent.localToWorld(this.clutchStartControllerPosition.setFromMatrixPosition(leftHandObject.matrix));
         } else if (!gripEngaged && this.isClutching) {
             this.isClutching = false;
         }
 
         if (this.isClutching) {
             const currentControllerPosition = new THREE.Vector3();
-            this.controller1.parent.localToWorld(currentControllerPosition.setFromMatrixPosition(this.controller1.matrix));
-            const motionDelta = new THREE.Vector3().subVectors(currentControllerPosition, this.clutchStartControllerPosition);
+            leftHandObject.parent.localToWorld(currentControllerPosition.setFromMatrixPosition(leftHandObject.matrix));
+            const motionDelta = new THREE.Vector3().subVectors(this.clutchStartControllerPosition, currentControllerPosition);
             this.clutchTargetPlayerPosition.copy(this.clutchStartPlayerPosition).add(motionDelta);
-            this.player.position.lerp(this.clutchTargetPlayerPosition, 0.02);
+            this.player.position.lerp(this.clutchTargetPlayerPosition, 0.1);
         } else {
-            // Thumbstick vertical movement depends on context (menu, console, or world navigation)
             if (isMenuVisible) {
-                if (Math.abs(joystickVertical) > 0.2) {
-                    this.callbacks.onVRMenuScroll(joystickVertical * delta);
-                }
+                if (Math.abs(joystickVertical) > 0.2) this.callbacks.onVRMenuScroll(joystickVertical * delta);
             } else if (!isConsoleVisible) {
-                if (Math.abs(joystickVertical) > 0.2) {
-                    moveVector.add(forwardDirection.clone().multiplyScalar(joystickVertical * this.moveSpeed * delta));
-                }
+                if (Math.abs(joystickVertical) > 0.2) moveVector.add(forwardDirection.clone().multiplyScalar(joystickVertical * this.moveSpeed * delta));
             }
         }
         
@@ -225,7 +220,7 @@ export default class PlayerController {
             rotationAmount -= joystickTurn * this.rotationSpeed * delta;
         }
         
-        // Trigger press also depends on context (select menu item or toggle info)
+        // This restores the trigger's dual functionality for menu selection and info toggle.
         const triggerPressed = triggerValue && !this.triggerButtonPressed;
         if (triggerPressed) {
             this.triggerButtonPressed = true;
@@ -238,8 +233,7 @@ export default class PlayerController {
             this.triggerButtonPressed = false;
         }
         
-        // Menu button assigned to thumbstick click
-        const hardwareMenuButton = buttons[3] && buttons[3].pressed;
+        const hardwareMenuButton = buttons[this.mapping.thumbstickClick]?.pressed || false;
         if (hardwareMenuButton && !this.menuButtonPressed) {
             this.menuButtonPressed = true;
             this.callbacks.onMenuToggle();
@@ -247,8 +241,7 @@ export default class PlayerController {
             this.menuButtonPressed = false;
         }
 
-        // Y button (left controller) for Previous
-        const prevButton = buttons[5] && buttons[5].pressed;
+        const prevButton = buttons[this.mapping.buttonY]?.pressed || false;
         if (prevButton && !this.periodKeyPressed) {
             this.periodKeyPressed = true;
             this.callbacks.onPrevImage();
@@ -256,8 +249,7 @@ export default class PlayerController {
             this.periodKeyPressed = false;
         }
         
-        // X button (left controller) for Next
-        const nextButton = buttons[4] && buttons[4].pressed;
+        const nextButton = buttons[this.mapping.buttonX]?.pressed || false;
         if (nextButton && !this.commaKeyPressed) {
             this.commaKeyPressed = true;
             this.callbacks.onNextImage();
@@ -286,7 +278,7 @@ export default class PlayerController {
             }
         }
 
-        const aButton = buttons[4] && buttons[4].pressed;
+        const aButton = buttons[this.mapping.buttonX]?.pressed || false;
         if (aButton && !this.consoleButtonPressed) {
             this.consoleButtonPressed = true;
             this.callbacks.onConsoleToggle();
@@ -294,7 +286,7 @@ export default class PlayerController {
             this.consoleButtonPressed = false;
         }
 
-        const bButton = buttons[5] && buttons[5].pressed;
+        const bButton = buttons[this.mapping.buttonY]?.pressed || false;
         if (bButton && !this.bButtonPressed) {
             this.bButtonPressed = true;
             this.callbacks.onControllerInfoToggle();
@@ -311,10 +303,9 @@ export default class PlayerController {
      * @returns {number} The calculated rotation amount.
      */
     handleDesktopControls(delta, moveVector, rotationAmount) {
-        // Get camera direction
         const forwardDirection = new THREE.Vector3();
         this.camera.getWorldDirection(forwardDirection);
-        forwardDirection.y = 0; // Move parallel to the ground
+        forwardDirection.y = 0;
         forwardDirection.normalize();
 
         const rightDirection = new THREE.Vector3();
@@ -322,16 +313,12 @@ export default class PlayerController {
         
         if (this.keys.w) moveVector.add(forwardDirection.clone().multiplyScalar(this.moveSpeed * delta));
         if (this.keys.s) moveVector.add(forwardDirection.clone().multiplyScalar(-this.moveSpeed * delta));
-        
         if (this.keys.q) moveVector.add(rightDirection.clone().multiplyScalar(-this.moveSpeed * delta));
         if (this.keys.e) moveVector.add(rightDirection.clone().multiplyScalar(this.moveSpeed * delta));
-
         if (this.keys.a) rotationAmount += this.rotationSpeed * delta; 
         if (this.keys.d) rotationAmount -= this.rotationSpeed * delta;
-        
         if (this.keys.r) this.player.position.y += this.moveSpeed * delta;
         if (this.keys.f) this.player.position.y -= this.moveSpeed * delta;
-
 
         if (this.keys['.'] && !this.periodKeyPressed) { this.periodKeyPressed = true; this.callbacks.onNextImage(); } 
         else if (!this.keys['.']) { this.periodKeyPressed = false; }
