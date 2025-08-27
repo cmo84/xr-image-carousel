@@ -76,7 +76,7 @@ export default class ArtManager {
         if (this.artGroup && !isMenuVisible && this.totalPaintings > 0) {
             const targetAngle = (this.targetImageIndex / this.totalPaintings) * Math.PI * 2;
             this.targetQuaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), targetAngle);
-            this.artGroup.quaternion.slerp(this.targetQuaternion, 0.05);
+            this.artGroup.quaternion.slerp(this.targetQuaternion, 0.15);
         }
         
         // Animate diagnostic labels appearing/disappearing.
